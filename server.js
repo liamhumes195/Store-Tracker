@@ -1,4 +1,4 @@
-const ITEMS = [["Sword", "73920481"], ["Unicorn", "58392047"], ["Clickeys", "381562"], ["Lucy The Kitten", "1001"], ["Mc Dolfon", "1002"], ["Pink Bin With Bows", "1003"], ["Unifary Kitty", "1004"], ["Add What U Want", "1005"], ["Happy Sqishmello", "1006"]];
+const ITEMS = [["Sword", "73920481"], ["Unicorn", "58392047"], ["Clickeys", "381562"], ["Lucy The Kitten", "649281"], ["Mc Dolfon", "88373001"], ["Pink Bin With Bows", "1003"], ["Unifary Kitty", "858377"], ["Add What U Want", "1005"], ["The Happy Quishmello", "725406"]];
 const CAMERA = "\nconst camera = document.querySelector('#camera');\ncamera.addEventListener('click', async () => {\n  const status = document.querySelector('#scan-status');\n  const video = document.querySelector('video');\n  if (!window.BarcodeDetector || !navigator.mediaDevices?.getUserMedia) {\n    status.textContent = 'Use a USB QR scanner, or type the item code below.';\n    return;\n  }\n  let stream;\n  camera.disabled = true;\n  try {\n    const detector = new BarcodeDetector({formats: ['qr_code']});\n    stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}});\n    video.srcObject = stream;\n    video.hidden = false;\n    await video.play();\n    status.textContent = 'Hold the QR code in front of the camera.';\n    const deadline = Date.now() + 30000;\n    while (Date.now() < deadline) {\n      const [result] = await detector.detect(video);\n      if (result) {\n        document.querySelector('#code').value = result.rawValue.replace(/[\\r\\n]+/g, ' ');\n        status.textContent = 'Code ready. Select Find item to review checkout.';\n        document.querySelector('#find').focus();\n        return;\n      }\n      await new Promise(resolve => setTimeout(resolve, 220));\n    }\n    status.textContent = 'Scan timed out. Try again or enter the code.';\n  } catch {\n    status.textContent = 'Camera unavailable. Use a USB scanner or enter the code.';\n  } finally {\n    stream?.getTracks().forEach(track => track.stop());\n    video.srcObject = null;\n    video.hidden = true;\n    camera.disabled = false;\n  }\n});\n";
 
 const { createServer } = require('node:http');
@@ -58,6 +58,29 @@ transaction(() => {
   if (!db.prepare('INSERT OR IGNORE INTO inventory_setup VALUES (1)').run().changes) return;
   const insert = db.prepare('INSERT OR IGNORE INTO stock VALUES (?, ?, 1)');
   for (const [name, code] of ITEMS) insert.run(code, name);
+});
+
+// Replace the original temporary codes with the printed QR label codes.
+// Update existing rows in place so quantities and checkout history survive.
+transaction(() => {
+  db.exec('CREATE TABLE IF NOT EXISTS item_code_migrations (id TEXT PRIMARY KEY)');
+  const migrationId = 'printed-qr-codes-2026-11-19';
+  if (db.prepare('SELECT 1 FROM item_code_migrations WHERE id = ?').get(migrationId)) return;
+  const corrections = [
+    ['1001', '649281', 'Lucy The Kitten', 'Lucy The Kitten'],
+    ['1002', '88373001', 'Mc Dolfon', 'Mc Dolfon'],
+    ['1004', '858377', 'Unifary Kitty', 'Unifary Kitty'],
+    ['1006', '725406', 'Happy Sqishmello', 'The Happy Quishmello']
+  ];
+  for (const [oldCode, newCode, oldName, newName] of corrections) {
+    const oldItem = db.prepare('SELECT * FROM stock WHERE code = ?').get(oldCode);
+    const existing = db.prepare('SELECT * FROM stock WHERE code = ?').get(newCode);
+    if (oldItem && oldItem.name === oldName && !existing) {
+      db.prepare('UPDATE stock SET code = ?, name = ? WHERE code = ?')
+        .run(newCode, newName, oldCode);
+    }
+  }
+  db.prepare('INSERT INTO item_code_migrations VALUES (?)').run(migrationId);
 });
 
 const derive = promisify(scrypt);
@@ -296,3 +319,4 @@ createServer((req, res) => {
     else res.end();
   });
 }).listen(port, '0.0.0.0', () => console.log(`The Item listening on port ${port}`));
+
