@@ -249,8 +249,14 @@ async function handle(req, res) {
   if (req.method !== 'POST') return respond(res, 'Method not allowed', 405);
   const host = req.headers.host;
   const origin = req.headers.origin;
-  if (!host || (origin && origin !== `${railway ? 'https' : 'http'}://${host}`) ||
-      (req.headers['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin')) {
+  const allowedOrigins = new Set();
+  if (host) allowedOrigins.add(`${railway ? 'https' : 'http'}://${host}`);
+  // Railway can forward an internal Host while the browser sends the public origin.
+  if (env.RAILWAY_PUBLIC_DOMAIN) allowedOrigins.add(`https://${env.RAILWAY_PUBLIC_DOMAIN}`);
+  if (env.PUBLIC_ORIGIN) allowedOrigins.add(new URL(env.PUBLIC_ORIGIN).origin);
+  const fetchSite = req.headers['sec-fetch-site'];
+  if ((origin && !allowedOrigins.has(origin)) ||
+      (fetchSite && fetchSite !== 'same-origin' && fetchSite !== 'none')) {
     return respond(res, 'Request blocked', 403);
   }
   const form = await readForm(req);
