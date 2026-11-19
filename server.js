@@ -82,7 +82,7 @@ function respond(res, body = '', status = 200, headers = {}) {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'no-referrer',
+    'Referrer-Policy': 'same-origin',
     ...headers
   });
   res.end(body);
